@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Secrets / env
+.env
+.env.local
+*.pem
+*.key
+
+# Training outputs (large; regenerable)
+outputs/
+wandb/
+*.pt
+*.bin
+*.safetensors
+*.gguf
+
+# Data — generated / heavy (the *.py generators stay; their outputs do not)
+data/processed/
+data/raw/layer2_pdfs/
+data/raw/*.jsonl
+# Exception: keep the small curated seed and archived teacher responses
+!data/raw/metacognitive_seed_v0.jsonl
+!data/raw/teacher_responses_v0.jsonl
+
+# HuggingFace + dataset caches
+.cache/
+huggingface/
+
+# Eval results are small JSON — commit them as part of the experiment log
+# (no exclusion for eval/results/)
+
+# Notebook checkpoints
+.ipynb_checkpoints/

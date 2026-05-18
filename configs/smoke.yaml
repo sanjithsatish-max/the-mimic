@@ -1,0 +1,44 @@
+# Stage 1 smoke-test config.
+# Goal: confirm pipeline works end-to-end on Colab T4 free or a local CPU dry-run.
+
+model:
+  base: "Qwen/Qwen2.5-0.5B-Instruct"
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  task_type: CAUSAL_LM
+
+data:
+  path: "data/processed/smoke.jsonl"
+  max_seq_length: 1024
+
+training:
+  output_dir: "outputs/smoke"
+  num_train_epochs: 1
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 2
+  learning_rate: 2.0e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  logging_steps: 10
+  save_strategy: "epoch"
+  bf16: true
+  optim: "paged_adamw_8bit"
+  report_to: "none"   # set to "wandb" once W&B is configured
+  seed: 42
+
+# Smoke gate: loss decreases monotonically over first 50 steps;
+# at end of epoch, model generates coherent assistant-style text on 3 held-out probes.
