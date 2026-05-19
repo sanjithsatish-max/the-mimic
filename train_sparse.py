@@ -166,6 +166,8 @@ def main() -> None:
     cfg = load_config(args.config)
 
     model, tokenizer = build_model(cfg)
+    # trl 1.x removed `max_seq_length` from SFTConfig — read from tokenizer instead.
+    tokenizer.model_max_length = cfg["data"]["max_seq_length"]
     dataset = load_training_dataset(cfg)
     print(f"[data] {len(dataset)} examples from {cfg['data']['path']}")
 
@@ -187,7 +189,6 @@ def main() -> None:
         report_to=t["report_to"],
         run_name=t.get("run_name"),
         seed=t["seed"],
-        max_seq_length=cfg["data"]["max_seq_length"],
         packing=False,
     )
     text_field = cfg["data"].get("text_field")
