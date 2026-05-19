@@ -172,6 +172,20 @@ def main() -> None:
     print(f"[data] {len(dataset)} examples from {cfg['data']['path']}")
 
     t = cfg["training"]
+
+    # trl 1.x changes baked in here:
+    #  - warmup_ratio is deprecated → compute warmup_steps from it
+    #  - max_length must be on SFTConfig directly; tokenizer.model_max_length
+    #    does NOT control trl's internal truncation
+    #  - dataset_text_field defaults to "text" if omitted; must explicitly
+    #    pass None for messages-mode SFT to suppress that default
+    steps_per_epoch = max(1, len(dataset) // (
+        t["per_device_train_batch_size"] * t.get("gradient_accumulation_steps", 1)
+    ))
+    total_steps = steps_per_epoch * t["num_train_epochs"]
+    warmup_steps = int(t["warmup_ratio"] * total_steps)
+    text_field = cfg["data"].get("text_field")  # None ⇒ messages-mode
+
     sft_kwargs = dict(
         output_dir=t["output_dir"],
         num_train_epochs=t["num_train_epochs"],
@@ -179,7 +193,7 @@ def main() -> None:
         gradient_accumulation_steps=t["gradient_accumulation_steps"],
         learning_rate=t["learning_rate"],
         lr_scheduler_type=t["lr_scheduler_type"],
-        warmup_ratio=t["warmup_ratio"],
+        warmup_steps=warmup_steps,
         logging_steps=t["logging_steps"],
         save_strategy=t["save_strategy"],
         save_steps=t.get("save_steps", 500),
@@ -190,10 +204,9 @@ def main() -> None:
         run_name=t.get("run_name"),
         seed=t["seed"],
         packing=False,
+        max_length=cfg["data"]["max_seq_length"],
+        dataset_text_field=text_field,
     )
-    text_field = cfg["data"].get("text_field")
-    if text_field:
-        sft_kwargs["dataset_text_field"] = text_field
     sft_config = SFTConfig(**sft_kwargs)
 
     trainer = SFTTrainer(
