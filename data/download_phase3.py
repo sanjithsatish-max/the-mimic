@@ -38,7 +38,7 @@ CPT_TARGETS = [
 
 SFT_TARGETS = [
     ("instructions", "allenai/tulu-3-sft-mixture",      None, "train",     40_000, "messages"),
-    ("casual",       "HuggingFaceH4/no_robots",         None, "train_sft", 10_000, "messages"),
+    ("casual",       "HuggingFaceH4/no_robots",         None, "train",     10_000, "messages"),
     # OASST2's raw row format produces 1-message non-conversations (Codex H3).
     # UltraChat is already multi-turn with the canonical messages schema.
     ("dialogue",     "HuggingFaceH4/ultrachat_200k",    None, "train_sft", 10_000, "messages"),
@@ -151,8 +151,18 @@ def write_sft_jsonl() -> None:
 
 
 def main() -> None:
-    write_cpt_jsonl()
-    write_sft_jsonl()
+    # Idempotent: skip a bucket file if it already exists. Lets re-runs after
+    # a partial failure resume from the broken bucket without re-downloading.
+    cpt_path = PROCESSED / "phase3_cpt.jsonl"
+    sft_path = PROCESSED / "phase3_sft.jsonl"
+    if cpt_path.exists() and cpt_path.stat().st_size > 0:
+        print(f"[cpt] {cpt_path} exists; skipping. Delete it to force re-download.")
+    else:
+        write_cpt_jsonl()
+    if sft_path.exists() and sft_path.stat().st_size > 0:
+        print(f"[sft] {sft_path} exists; skipping. Delete it to force re-download.")
+    else:
+        write_sft_jsonl()
     print("[done] Phase 3 data ready under data/processed/")
 
 
