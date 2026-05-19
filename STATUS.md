@@ -312,3 +312,70 @@ All Codex + sonnet review findings either fixed or explicitly deferred with reas
 4. wandb removed from defaults so trainer init doesn't crash
 
 User opens `notebooks/heal_colab.ipynb` and runs cells 1-5 (smoke) → if green, cell 6 (Stage 1).
+
+---
+
+## 2026-05-19 — Stage 1 CPT completed on Colab Pro A100; eval is a mixed result
+
+### Trl 1.x patch chase before training launched
+5 distinct API breakages hit iteratively before training started, all eventually patched (commits 35867a8, 8c76800, 9cb1391, 839a438, 4a5822c locally; not yet pushed to GitHub — need `gh auth login` first):
+- `SFTConfig(max_seq_length=...)` removed → use `SFTConfig.max_length` directly
+- `SFTTrainer(tokenizer=...)` → `processing_class=...`
+- `SFTConfig.dataset_text_field` defaults to "text"; must pass `None` explicitly for messages-mode
+- `warmup_ratio` deprecated → compute `warmup_steps` from ratio × total_steps
+- `datasets` library removed `trust_remote_code` AND loading-script support; forced corpus swaps: `armanc/scientific_papers` → `HuggingFaceFW/fineweb-edu`, OASST2 (SFT) → `ultrachat_200k`, no_robots split `train_sft` → `train`
+
+Pattern recorded in `~/superbrain/sub-brains/cs/mistakes/mistake-1223026a.md`: pre-scout library API drift via adversarial review BEFORE first training run, not iteratively. Iterative patch-chase cost 4 test cycles × ~10 min each before sonnet adversarial review caught the remaining 3 in one pass.
+
+### Stage 1 actual run
+- 3750 steps × 2.21s/it = 2h17m on A100 (batch 4 × grad_accum 4 = effective 16, 60K samples / 16 = 3750 steps for 1 epoch — matches)
+- Train loss: 2.67 → 2.45 over the epoch, final reported `train_loss=2.481`
+- Output: saved to `outputs/smoke_sparse/` (because the user ran the smoke cell which had its `output_dir` override active, but `max_steps=50` was apparently ignored — likely user-edited cell or trl 1.x precedence change). Renamed to `outputs/heal_cpt/` to match Stage 2 config's `resume_adapter_from`.
+- Adapter: ~17MB LoRA weights (`adapter_model.safetensors`), with checkpoint-3000 and checkpoint-3750 dirs preserved.
+- Backup synced to `/content/drive/MyDrive/the-mimic-outputs/`.
+
+### Post-Stage-1 eval sweep (Phase 1 baseline comparison)
+
+Phase 1 baseline (`sweep_20260518T011005Z.json`, no adapter):
+```
+sinks \ window |     32 |     64 |    128 |    192
+              0 | 30.057 | 25.593 | 18.929 |  3.899
+              4 |  1.404 |  1.151 |  1.042 |  1.006
+              8 |  1.360 |  1.136 |  1.038 |  1.003
+```
+
+Post-Stage-1 (`sweep_20260519T214432Z.json`, adapter merged):
+```
+sinks \ window |     32 |     64 |    128 |    256
+              0 | 16.080 | 15.015 | 14.841 |  1.000
+              4 |  1.404 |  1.142 |  1.036 |  1.000
+              8 |  1.361 |  1.125 |  1.033 |  1.000
+```
+(window=256 column trivially = 1.000 because seq_len=256; this is full attention.)
+
+Dense baseline PPL: 22.67 → 23.33 (**+2.9%, slight regression**).
+
+### Honest interpretation: mostly a wash on cells we care about
+- **sinks=0 column improved 22-46%** — randomized-window training during Stage 1 made the model genuinely more robust to sparse attention without sink anchors. Real gain, but in degenerate territory (we never deploy sinks=0).
+- **sinks=4 and sinks=8 cells barely moved** (≤1% change). These are the production-relevant configs. They were already at 1.04-1.16 in Phase 1 (close to ceiling); Stage 1 had little room to improve them.
+- **Dense baseline slightly regressed** (+2.9% PPL). Small but real.
+
+Net: Stage 1 traded a meaningful gain on sinks=0 (which doesn't matter) for a small loss on dense (which does), and produced negligible change on the cells we'd actually use. The healing thesis got **weak empirical support** — mostly because the dent the thesis was healing was smaller than expected at the cells of interest.
+
+### Stage 2 decision: proceed, with shifted eval focus
+The healing-by-perplexity question is now answered (weakly). Stage 2's thesis is different and uncovered: SFT on diverse instruction data + metacognitive seed under the same sparse mask should shape **response style**, not perplexity. The eval to actually run after Stage 2 isn't another sparse sweep — it's the **probe set** (`probes/v1.md`) measuring metacognitive patterns, plus a confirmatory sparse sweep to verify we didn't lose what we have.
+
+User launched `!python train_sparse.py --config configs/heal_sft.yaml` ~21:45 UTC. Expected: ~4-6 hr on A100. Resumes from `outputs/heal_cpt/` adapter.
+
+### Files touched this session (local only, not yet pushed)
+- `data/download_phase3.py` — trust_remote_code removal, dataset swaps (commits 35867a8, 8c76800)
+- `train_sparse.py` — trl 1.x compatibility patches (commits 9cb1391, 839a438, 4a5822c)
+- All 6 superbrain stub nodes filled + ingested (decision, mistake, source, preference, anomaly, cross-link)
+- 5 stale brainstem preferences patched to `domain: core` (cleanup)
+
+### Next action when Stage 2 completes
+1. Backup the Stage 2 adapter to Drive
+2. Run probe-set eval (need to write `eval/probes.py` — not yet implemented; was flagged in PHASE3_FINETUNE.md as Stage 2 deliverable)
+3. Run sparse sweep on Stage 2 adapter to confirm no regression
+4. Update north-star table in `PHASE3_FINETUNE.md` §5
+5. Then decide on Phase 4 RL or pause
