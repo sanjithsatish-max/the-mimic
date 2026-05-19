@@ -227,7 +227,21 @@ def main() -> None:
     )
 
     verify_sparse_pipeline(trainer, dataset)
-    trainer.train()
+
+    # Resume from latest checkpoint if one exists in the output dir.
+    # Pattern: outputs/heal_sft/checkpoint-500, checkpoint-1000, ...
+    output_dir = Path(t["output_dir"])
+    resume_from = None
+    if output_dir.exists():
+        checkpoints = sorted(
+            output_dir.glob("checkpoint-*"),
+            key=lambda p: int(p.name.split("-")[1]),
+        )
+        if checkpoints:
+            resume_from = str(checkpoints[-1])
+            print(f"[resume] found existing checkpoint: {resume_from}")
+
+    trainer.train(resume_from_checkpoint=resume_from)
     trainer.save_model(t["output_dir"])
     print(f"[done] adapter saved to {t['output_dir']}")
 
