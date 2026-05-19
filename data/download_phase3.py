@@ -25,10 +25,12 @@ RAW = Path(__file__).parent / "raw"
 
 CPT_TARGETS = [
     # bucket, hf_path, hf_config, split, sample_n, formatter_key
-    ("wiki",         "wikimedia/wikipedia",      "20231101.en", "train", 30_000, "wiki"),
-    ("science",      "armanc/scientific_papers", "arxiv",       "train", 15_000, "science"),
-    ("instruction",  "allenai/tulu-3-sft-mixture", None,        "train", 10_000, "messages_flat"),
-    ("dialogue",     "OpenAssistant/oasst2",     None,          "train",  5_000, "oasst_flat"),
+    # All entries are parquet-native (no loading scripts) since the
+    # `datasets` library dropped script support and `trust_remote_code`.
+    ("wiki",         "wikimedia/wikipedia",          "20231101.en", "train",     30_000, "wiki"),
+    ("science",      "HuggingFaceFW/fineweb-edu",    "sample-10BT", "train",     15_000, "wiki"),
+    ("instruction",  "allenai/tulu-3-sft-mixture",   None,          "train",     10_000, "messages_flat"),
+    ("dialogue",     "HuggingFaceH4/ultrachat_200k", None,          "train_sft",  5_000, "messages_flat"),
     # Philosophy is intentionally deferred; high-quality open philosophy text
     # is fragmented. Stage 1 v0 runs without it; v1 adds curated Project
     # Gutenberg philosophy subset.
@@ -45,31 +47,14 @@ SFT_TARGETS = [
 
 
 def _wiki_to_text(s: dict) -> str:
+    """Read the `text` field — works for wikipedia, fineweb-edu, any parquet text dump."""
     return (s.get("text") or "").strip()
-
-
-def _science_to_text(s: dict) -> str:
-    abstract = (s.get("abstract") or "").strip()
-    article = (s.get("article") or "").strip()
-    if not abstract and not article:
-        return ""
-    intro = article[:2000] if article else ""
-    return (abstract + "\n\n" + intro).strip()
 
 
 def _messages_flat(s: dict) -> str:
     """Flatten messages list into 'role: content' sequence for CPT."""
     msgs = s.get("messages") or []
     return "\n\n".join(f"{m['role']}: {m['content']}" for m in msgs if m.get("content"))
-
-
-def _oasst_flat(s: dict) -> str:
-    """OASST top-level message-pair flatten."""
-    role = s.get("role", "")
-    text = (s.get("text") or "").strip()
-    if not text:
-        return ""
-    return f"{role}: {text}"
 
 
 def _passthrough_messages(s: dict) -> list[dict] | None:
@@ -93,9 +78,7 @@ def _dolly_to_messages(s: dict) -> list[dict] | None:
 
 TEXT_FORMATTERS = {
     "wiki": _wiki_to_text,
-    "science": _science_to_text,
     "messages_flat": _messages_flat,
-    "oasst_flat": _oasst_flat,
 }
 
 MSG_FORMATTERS = {
@@ -105,7 +88,10 @@ MSG_FORMATTERS = {
 
 
 def _stream_load(hf_path: str, hf_config: str | None, split: str):
-    kwargs = {"split": split, "streaming": True, "trust_remote_code": True}
+    # `trust_remote_code` was removed from datasets in late 2025; loading-script
+    # datasets are no longer supported at all. All CPT_TARGETS / SFT_TARGETS
+    # must point at parquet-native datasets.
+    kwargs = {"split": split, "streaming": True}
     return (load_dataset(hf_path, hf_config, **kwargs)
             if hf_config
             else load_dataset(hf_path, **kwargs))
