@@ -142,8 +142,11 @@ def write_sft_jsonl() -> None:
                 if not line.strip():
                     continue
                 row = json.loads(line)
-                row["bucket"] = "metacognitive_seed"
-                f.write(json.dumps(row) + "\n")
+                # Normalize schema: bulk SFT rows are {messages, bucket} only.
+                # Seed rows carry extra metadata (source, generated_at) that
+                # datasets' schema inference chokes on. Strip to match.
+                clean = {"messages": row["messages"], "bucket": "metacognitive_seed"}
+                f.write(json.dumps(clean) + "\n")
                 seed_n += 1
             print(f"  [metacognitive_seed] appended {seed_n}")
         else:
